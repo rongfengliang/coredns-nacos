@@ -106,16 +106,16 @@ func (us *UDPServer) handleClient(conn *net.UDPConn) {
 		return
 	}
 
-	domain, err1 := ProcessDomainString(pushData.Data)
-	NacosClientLogger.Info("receive domain: ", domain)
+	service, err1 := ProcessDomainString(pushData.Data)
+	NacosClientLogger.Info("receive service: ", service)
 
 	if err1 != nil {
 		NacosClientLogger.Warn("failed to process push data: "+s, err1)
 	}
 
-	key := GetCacheKey(domain.Name, LocalIP())
+	key := GetCacheKey(service.Name, LocalIP())
 
-	us.vipClient.domainMap.Set(key, domain)
+	us.vipClient.serviceMap.Set(key, service)
 
 	ack := make(map[string]string)
 	ack["type"] = "push-ack"

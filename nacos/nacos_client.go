@@ -42,8 +42,8 @@ func init() {
 }
 
 type NacosClient struct {
-	domainMap ConcurrentMap
-	udpServer UDPServer
+	serviceMap ConcurrentMap
+	udpServer  UDPServer
 	//serverManager ServerManager
 	//serverPort    int
 }
@@ -131,10 +131,10 @@ func initLog() {
 	}
 }
 
-func (nacosClient *NacosClient) asyncGetAllDomNAmes() {
+func (nacosClient *NacosClient) asyncGetAllServiceNames() {
 	for {
 		time.Sleep(time.Duration(AllDoms.CacheSeconds) * time.Second)
-		nacosClient.getAllDomNames()
+		nacosClient.getAllServiceNames()
 	}
 }
 
@@ -146,7 +146,7 @@ func (nacosClient *NacosClient) GetUdpServer() (us UDPServer) {
 	return nacosClient.udpServer
 }
 
-func (nacosClient *NacosClient) getAllDomNames() {
+func (nacosClient *NacosClient) getAllServiceNames() {
 
 	services := GrpcClient.GetAllServicesInfo()
 	if services == nil {
@@ -156,20 +156,16 @@ func (nacosClient *NacosClient) getAllDomNames() {
 
 	AllDoms.DLock.Lock()
 	if AllDoms.Data == nil {
-		var allDoms map[string]bool
-		// subscribe services return from server
+		allDoms := make(map[string]bool)
+		// record all serviceNames return from server
 		for _, service := range services {
-			NacosClientLogger.Info("subscirbe service:", service)
-			GrpcClient.Subscribe(service)
 			allDoms[service] = true
 		}
 		AllDoms.Data = allDoms
-		AllDoms.CacheSeconds = 30 //刷新间隔30s
+		AllDoms.CacheSeconds = 10 //刷新间隔
 	} else {
 		for _, service := range services {
 			if !AllDoms.Data[service] {
-				NacosClientLogger.Info("subscirbe service:", service)
-				GrpcClient.Subscribe(service)
 				AllDoms.Data[service] = true
 			}
 		}
@@ -181,10 +177,10 @@ func (nacosClient *NacosClient) getAllDomNames() {
 //	nacosClient.serverManager.SetServers(servers)
 //}
 
-func (vc *NacosClient) Registered(dom string) bool {
+func (vc *NacosClient) Registered(service string) bool {
 	defer AllDoms.DLock.RUnlock()
 	AllDoms.DLock.RLock()
-	_, ok1 := AllDoms.Data[dom]
+	_, ok1 := AllDoms.Data[service]
 
 	return ok1
 }
@@ -211,28 +207,28 @@ func (vc *NacosClient) loadCache() {
 			continue
 		}
 
-		vc.domainMap.Set(f.Name(), service)
+		vc.serviceMap.Set(f.Name(), service)
 	}
 
 	NacosClientLogger.Info("finish loading cache, total: " + strconv.Itoa(len(files)))
 }
 
-func ProcessDomainString(s string) (Domain, error) {
-	var domain Domain
-	err1 := json.Unmarshal([]byte(s), &domain)
+func ProcessDomainString(s string) (model.Service, error) {
+	var service model.Service
+	err1 := json.Unmarshal([]byte(s), &service)
 
 	if err1 != nil {
 		NacosClientLogger.Error("failed to unmarshal json string: "+s, err1)
-		return Domain{}, err1
+		return model.Service{}, err1
 	}
 
-	if len(domain.Instances) == 0 {
-		NacosClientLogger.Warn("get empty ip list, ignore it, dom: " + domain.Name)
-		return domain, NacosClientError{"empty ip list"}
+	if len(service.Hosts) == 0 {
+		NacosClientLogger.Warn("get empty ip list, ignore it, service: " + service.Name)
+		return service, NacosClientError{"empty ip list"}
 	}
 
-	NacosClientLogger.Info("domain "+domain.Name+" is updated, current ips: ", domain.Instances)
-	return domain, nil
+	NacosClientLogger.Info("domain "+service.Name+" is updated, current ips: ", service.Hosts)
+	return service, nil
 }
 
 func NewNacosClient(namespaceId string, serverHosts []string) *NacosClient {
@@ -255,11 +251,11 @@ func NewNacosClient(namespaceId string, serverHosts []string) *NacosClient {
 	AllDoms = AllDomsMap{}
 	AllDoms.Data = make(map[string]bool)
 	AllDoms.DLock = sync.RWMutex{}
-	AllDoms.CacheSeconds = 30
+	AllDoms.CacheSeconds = 10
 
-	vc.getAllDomNames()
+	vc.getAllServiceNames()
 
-	go vc.asyncGetAllDomNAmes()
+	go vc.asyncGetAllServiceNames()
 
 	//go vc.asyncUpdateDomain()
 
@@ -268,11 +264,11 @@ func NewNacosClient(namespaceId string, serverHosts []string) *NacosClient {
 }
 
 func (vc *NacosClient) GetDomainCache() ConcurrentMap {
-	return vc.domainMap
+	return vc.serviceMap
 }
 
 func (vc *NacosClient) GetDomain(name string) (*Domain, error) {
-	item, _ := vc.domainMap.Get(name)
+	item, _ := vc.serviceMap.Get(name)
 
 	if item == nil {
 		domain := Domain{}
@@ -281,7 +277,7 @@ func (vc *NacosClient) GetDomain(name string) (*Domain, error) {
 		domain.Name = ss[0]
 		domain.CacheMillis = DefaultCacheMillis
 		domain.LastRefMillis = CurrentMillis()
-		vc.domainMap.Set(name, domain)
+		vc.serviceMap.Set(name, domain)
 		item = domain
 		return nil, NacosClientError{"domain not found: " + name}
 	}
@@ -293,18 +289,18 @@ func (vc *NacosClient) GetDomain(name string) (*Domain, error) {
 
 func (vc *NacosClient) asyncUpdateDomain() {
 	for {
-		for k, v := range vc.domainMap.Items() {
-			dom := v.(model.Service)
+		for k, v := range vc.serviceMap.Items() {
+			service := v.(model.Service)
 			ss := strings.Split(k, SEPERATOR)
 
-			domName := ss[0]
+			serviceName := ss[0]
 			var clientIP string
 			if len(ss) > 1 && ss[1] != "" {
 				clientIP = ss[1]
 			}
 
-			if uint64(CurrentMillis())-dom.LastRefTime > dom.CacheMillis && vc.Registered(domName) {
-				vc.getDomNow(domName, &vc.domainMap, clientIP)
+			if uint64(CurrentMillis())-service.LastRefTime > service.CacheMillis && vc.Registered(serviceName) {
+				vc.getServiceNow(serviceName, &vc.serviceMap, clientIP)
 			}
 		}
 		time.Sleep(1 * time.Second)
@@ -316,54 +312,44 @@ func GetCacheKey(dom, clientIP string) string {
 	return dom + SEPERATOR + clientIP
 }
 
-func (vc *NacosClient) getDomNow(serviceName string, cache *ConcurrentMap, clientIP string) model.Service {
+func (vc *NacosClient) getServiceNow(serviceName string, cache *ConcurrentMap, clientIP string) model.Service {
 	service := GrpcClient.GetService(serviceName)
 
-	oldDomain, ok := cache.Get(serviceName)
-	if !ok || ok && !reflect.DeepEqual(service.Hosts, oldDomain.(model.Service).Hosts) {
-		if !ok {
-			NacosClientLogger.Info("dom not found in cache " + serviceName)
-			oldDomain = model.Service{}
-		}
-		NacosClientLogger.Info("dom "+serviceName+" updated: ", service)
-	}
 	cache.Set(serviceName, service)
 
-	//subscribe service
-	if !AllDoms.Data[serviceName] {
+	NacosClientLogger.Info("dom "+serviceName+" updated: ", service)
+
+	if !GrpcClient.SubscribeMap[serviceName] {
 		GrpcClient.Subscribe(serviceName)
-		AllDoms.Data[serviceName] = true
 	}
 
 	return service
 }
 
-func (vc *NacosClient) SrvInstance(domainName, clientIP string) *model.Instance {
-	item, hasDom := vc.domainMap.Get(domainName)
-	var dom model.Service
-	if !hasDom {
-		dom = vc.getDomNow(domainName, &vc.domainMap, clientIP)
-		vc.domainMap.Set(domainName, dom)
+func (vc *NacosClient) SrvInstance(serviceName, clientIP string) *model.Instance {
+	item, hasService := vc.serviceMap.Get(serviceName)
+	var service model.Service
+	if !hasService {
+		service = vc.getServiceNow(serviceName, &vc.serviceMap, clientIP)
+		vc.serviceMap.Set(serviceName, service)
 	} else {
-		dom = item.(model.Service)
+		service = item.(model.Service)
 	}
 
 	//select healthy instances
 	var hosts []model.Instance
-	for _, host := range dom.Hosts {
+	for _, host := range service.Hosts {
 		if host.Healthy && host.Enable && host.Weight > 0 {
-			for i := 0; i < int(math.Ceil(host.Weight)); i++ {
-				hosts = append(hosts, host)
-			}
+			hosts = append(hosts, host)
 		}
 	}
 
 	if len(hosts) == 0 {
-		NacosClientLogger.Warn("no hosts for " + domainName)
+		NacosClientLogger.Warn("no healthy instances for " + serviceName)
 		return nil
 	}
 
-	i, indexOk := indexMap.Get(domainName)
+	i, indexOk := indexMap.Get(serviceName)
 	var index int
 
 	if !indexOk {
@@ -376,19 +362,19 @@ func (vc *NacosClient) SrvInstance(domainName, clientIP string) *model.Instance 
 		}
 	}
 
-	indexMap.Set(domainName, index)
+	indexMap.Set(serviceName, index)
 
 	return &hosts[index]
 }
 
 func (vc *NacosClient) SrvInstances(domainName, clientIP string) []model.Instance {
 	cacheKey := GetCacheKey(domainName, clientIP)
-	item, hasDom := vc.domainMap.Get(cacheKey)
+	item, hasDom := vc.serviceMap.Get(cacheKey)
 	var dom model.Service
 
 	if !hasDom {
-		dom = vc.getDomNow(domainName, &vc.domainMap, clientIP)
-		vc.domainMap.Set(cacheKey, dom)
+		dom = vc.getServiceNow(domainName, &vc.serviceMap, clientIP)
+		vc.serviceMap.Set(cacheKey, dom)
 	} else {
 		dom = item.(model.Service)
 	}

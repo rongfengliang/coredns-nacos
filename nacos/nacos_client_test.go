@@ -59,9 +59,9 @@ func NewNacosClientTEST() *NacosClient {
 	return &vc
 }
 
-func TestNacosClient_getAllDomNames(t *testing.T) {
+func TestNacosClient_getAllServiceNames(t *testing.T) {
 	GrpcClient = grpcClientTest
-	nacosClientTest.getAllDomNames()
+	nacosClientTest.getAllServiceNames()
 
 	AllDoms.DLock.Lock()
 
@@ -76,15 +76,12 @@ func TestNacosClient_getAllDomNames(t *testing.T) {
 
 func TestNacosClient_getDomNow(t *testing.T) {
 	GrpcClient = grpcClientTest
-	nacosClientTest.getAllDomNames()
-
-	domainMapTest := NewConcurrentMap()
-	for k, _ := range AllDoms.Data {
-		s, ok := nacosClientTest.GetDomainCache().Get(k)
+	nacosClientTest.getAllServiceNames()
+	for serviceName, _ := range AllDoms.Data {
+		nacosClientTest.getServiceNow(serviceName, &nacosClientTest.serviceMap, "0.0.0.0")
+		s, ok := nacosClientTest.GetDomainCache().Get(serviceName)
 		assert.True(t, ok)
-		ncService := s.(model.Service)
-		service := nacosClientTest.getDomNow(k, &domainMapTest, "0.0.0.0")
-		assert.True(t, service.Name == ncService.Name)
-		return
+		service := s.(model.Service)
+		assert.True(t, serviceName == service.Name)
 	}
 }
