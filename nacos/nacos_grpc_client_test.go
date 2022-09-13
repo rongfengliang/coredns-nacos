@@ -10,22 +10,35 @@ import (
 var grpcClientTest = NewNacosGrpcClientTest()
 
 func NewNacosGrpcClientTest() *NacosGrpcClient {
-	grpcClient, _ := NewNacosGrpcClient("", []string{"console.nacos.io:8848"}, nacosClientTest)
+	grpcClient, err := NewNacosGrpcClient("", []string{"106.52.77.111:8848"}, nacosClientTest)
+	if err != nil {
+		fmt.Println("init grpc client failed")
+	}
 	return grpcClient
 }
 
 func TestGetAllServicesInfo(t *testing.T) {
-	doms := grpcClientTest.GetAllServicesInfo()
-	if assert.NotNil(t, doms) {
-		fmt.Println("doms size:", len(doms))
+	services := grpcClientTest.GetAllServicesInfo()
+	if len(services) > 0 {
+		t.Log("GrpcClient get all servicesInfo passed")
+	} else {
+		t.Log("GrpcClient get all servicesInfo empty")
 	}
 }
 
 func TestGetService(t *testing.T) {
-	doms := grpcClientTest.GetAllServicesInfo()
-	for _, dom := range doms {
-		service := grpcClientTest.GetService(dom)
-		assert.NotNil(t, service)
+	services := grpcClientTest.GetAllServicesInfo()
+	serviceMap := NewConcurrentMap()
+	for _, serviceName := range services {
+		service := grpcClientTest.GetService(serviceName)
+		if assert.NotNil(t, service) {
+			serviceMap.Set(serviceName, service)
+		}
+	}
+	if serviceMap.Count() == len(services) {
+		t.Log("GrpcClient get service passed")
+	} else {
+		t.Error("GrpcClient get service error")
 	}
 }
 
@@ -33,8 +46,12 @@ func TestSubscribe(t *testing.T) {
 	doms := grpcClientTest.GetAllServicesInfo()
 	for _, dom := range doms {
 		err := grpcClientTest.Subscribe(dom)
-		assert.Nil(t, err)
+		if err != nil {
+			t.Error("GrpcClient subscribe service error")
+			return
+		}
 	}
+	t.Log("GrpcClient subscribe service passed")
 }
 
 func TestCallback(t *testing.T) {
@@ -160,7 +177,9 @@ func TestCallback(t *testing.T) {
 
 	updateServices := s.(model.Service)
 
-	pass := len(newServices.Hosts) == len(updateServices.Hosts)
-	assert.True(t, pass)
-
+	if len(newServices.Hosts) == len(updateServices.Hosts) {
+		t.Log("GrpcClient Service SubscribeCallback passed")
+	} else {
+		t.Error("GrpcClient Service SubscribeCallback error")
+	}
 }

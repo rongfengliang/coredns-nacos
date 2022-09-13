@@ -319,10 +319,6 @@ func (vc *NacosClient) getServiceNow(serviceName string, cache *ConcurrentMap, c
 
 	NacosClientLogger.Info("dom "+serviceName+" updated: ", service)
 
-	if !GrpcClient.SubscribeMap[serviceName] {
-		GrpcClient.Subscribe(serviceName)
-	}
-
 	return service
 }
 

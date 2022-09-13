@@ -64,24 +64,40 @@ func TestNacosClient_getAllServiceNames(t *testing.T) {
 	nacosClientTest.getAllServiceNames()
 
 	AllDoms.DLock.Lock()
-
 	defer AllDoms.DLock.Unlock()
-
 	doms := GrpcClient.GetAllServicesInfo()
+
 	for _, dom := range doms {
 		assert.True(t, AllDoms.Data[dom])
 	}
-
+	if len(doms) == len(AllDoms.Data) {
+		t.Log("Get all serviceName from servers passed")
+	} else {
+		t.Error("Get all serviceName from servers error")
+	}
 }
 
-func TestNacosClient_getDomNow(t *testing.T) {
+func TestNacosClient_getServiceNow(t *testing.T) {
 	GrpcClient = grpcClientTest
 	nacosClientTest.getAllServiceNames()
+	testServiceMap := NewConcurrentMap()
+
 	for serviceName, _ := range AllDoms.Data {
 		nacosClientTest.getServiceNow(serviceName, &nacosClientTest.serviceMap, "0.0.0.0")
+	}
+
+	for serviceName, _ := range AllDoms.Data {
+		testService := GrpcClient.GetService(serviceName)
+		testServiceMap.Set(serviceName, testService)
 		s, ok := nacosClientTest.GetDomainCache().Get(serviceName)
 		assert.True(t, ok)
 		service := s.(model.Service)
-		assert.True(t, serviceName == service.Name)
+		assert.True(t, len(service.Hosts) == len(testService.Hosts))
+	}
+
+	if len(nacosClientTest.GetDomainCache()) == len(testServiceMap) {
+		t.Log("Get all servicesInfo from servers passed")
+	} else {
+		t.Error("Get all servicesInfo from servers error")
 	}
 }

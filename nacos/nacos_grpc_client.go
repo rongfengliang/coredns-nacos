@@ -9,6 +9,7 @@ import (
 	"github.com/nacos-group/nacos-sdk-go/v2/vo"
 	"strconv"
 	"strings"
+	"sync"
 )
 
 type NacosGrpcClient struct {
@@ -17,7 +18,7 @@ type NacosGrpcClient struct {
 	serverConfigs []constant.ServerConfig     //nacos服务器集群配置
 	grpcClient    naming_client.INamingClient //nacos-coredns与nacos服务器的grpc连接
 	nacosClient   *NacosClient
-	SubscribeMap  map[string]bool
+	SubscribeMap  AllDomsMap
 }
 
 func NewNacosGrpcClient(namespaceId string, serverHosts []string, vc *NacosClient) (*NacosGrpcClient, error) {
@@ -52,7 +53,7 @@ func NewNacosGrpcClient(namespaceId string, serverHosts []string, vc *NacosClien
 		constant.WithUpdateCacheWhenEmpty(true),
 		constant.WithLogDir(LogPath),
 		constant.WithCacheDir(CachePath),
-		constant.WithLogLevel("info"),
+		constant.WithLogLevel("debug"),
 	)
 
 	var err error
@@ -65,8 +66,9 @@ func NewNacosGrpcClient(namespaceId string, serverHosts []string, vc *NacosClien
 	if err != nil {
 		fmt.Println("init nacos-client error")
 	}
-
-	nacosGrpcClient.SubscribeMap = make(map[string]bool)
+	nacosGrpcClient.SubscribeMap = AllDomsMap{}
+	nacosGrpcClient.SubscribeMap.Data = make(map[string]bool)
+	nacosGrpcClient.SubscribeMap.DLock = sync.RWMutex{}
 
 	return &nacosGrpcClient, err
 }
@@ -75,30 +77,25 @@ func (ngc *NacosGrpcClient) GetAllServicesInfo() []string {
 	var pageNo = uint32(1)
 	var pageSize = uint32(100)
 	var services []string
-	serviceList, _ := ngc.grpcClient.GetAllServicesInfo(vo.GetAllServiceInfoParam{
+
+	pageServiceList, _ := ngc.grpcClient.GetAllServicesInfo(vo.GetAllServiceInfoParam{
 		NameSpace: ngc.namespaceId,
 		PageNo:    pageNo,
 		PageSize:  pageSize,
 	})
+	services = append(services, pageServiceList.Doms...)
 
-	if serviceList.Count == 0 {
-		return services
-	}
-
-	services = append(services, serviceList.Doms...)
-
-	for pageNo = 2; serviceList.Count >= int64(pageSize); pageNo++ {
-		serviceList, _ = ngc.grpcClient.GetAllServicesInfo(vo.GetAllServiceInfoParam{
+	// 如果当前页数服务数满了, 继续查找添加下一页
+	for pageNo++; len(pageServiceList.Doms) >= int(pageSize); pageNo++ {
+		pageServiceList, _ = ngc.grpcClient.GetAllServicesInfo(vo.GetAllServiceInfoParam{
 			NameSpace: ngc.namespaceId,
 			PageNo:    pageNo,
 			PageSize:  pageSize,
 		})
-		if serviceList.Count > 0 {
-			services = append(services, serviceList.Doms...)
-		}
+		services = append(services, pageServiceList.Doms...)
 	}
-
 	return services
+
 }
 
 func (ngc *NacosGrpcClient) GetService(serviceName string) model.Service {
@@ -113,7 +110,7 @@ func (ngc *NacosGrpcClient) GetService(serviceName string) model.Service {
 }
 
 func (ngc *NacosGrpcClient) Subscribe(serviceName string) error {
-	if ngc.SubscribeMap[serviceName] {
+	if ngc.HasSubcribed(serviceName) {
 		NacosClientLogger.Info("service " + serviceName + " already subsrcibed.")
 		return nil
 	}
@@ -126,13 +123,16 @@ func (ngc *NacosGrpcClient) Subscribe(serviceName string) error {
 		NacosClientLogger.Error("service subscribe error " + serviceName)
 		return err
 	}
-	ngc.SubscribeMap[serviceName] = true
+
+	ngc.SubscribeMap.DLock.Lock()
+	ngc.SubscribeMap.Data[serviceName] = true
+	ngc.SubscribeMap.DLock.Unlock()
 
 	return nil
 }
 
 func (ngc *NacosGrpcClient) Unsubsrcibe(serviceName string) error {
-	if !ngc.SubscribeMap[serviceName] {
+	if !ngc.HasSubcribed(serviceName) {
 		NacosClientLogger.Info("service " + serviceName + " already unsubsrcibed.")
 		return nil
 	}
@@ -145,7 +145,11 @@ func (ngc *NacosGrpcClient) Unsubsrcibe(serviceName string) error {
 		NacosClientLogger.Error("service unsubscribe error " + serviceName)
 		return err
 	}
-	ngc.SubscribeMap[serviceName] = false
+
+	ngc.SubscribeMap.DLock.Lock()
+	ngc.SubscribeMap.Data[serviceName] = false
+	ngc.SubscribeMap.DLock.Unlock()
+
 	return nil
 }
 
@@ -175,4 +179,10 @@ func (ngc *NacosGrpcClient) Callback(instances []model.Instance, err error) {
 	}
 	NacosClientLogger.Info("serviceName: "+serviceName+" was updated to: ", instances)
 
+}
+
+func (ngc *NacosGrpcClient) HasSubcribed(serviceName string) bool {
+	defer ngc.SubscribeMap.DLock.RUnlock()
+	ngc.SubscribeMap.DLock.RLock()
+	return ngc.SubscribeMap.Data[serviceName]
 }

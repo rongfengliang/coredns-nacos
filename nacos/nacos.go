@@ -58,8 +58,13 @@ func (vs *Nacos) managed(service, clientIP string) bool {
 		1.服务首次请求, 缓存中没有数据
 		2.插件初始化时在缓存文件中缓存了该服务数据, 但未订阅
 	*/
-	if ok1 && (!inCache || !GrpcClient.SubscribeMap[service]) {
-		vs.NacosClientImpl.getServiceNow(service, &vs.NacosClientImpl.serviceMap, clientIP)
+	if ok1 {
+		if !inCache {
+			vs.NacosClientImpl.getServiceNow(service, &vs.NacosClientImpl.serviceMap, clientIP)
+		}
+		if !GrpcClient.HasSubcribed(service) {
+			GrpcClient.Subscribe(service)
+		}
 	}
 
 	return ok1 || inCache
