@@ -124,9 +124,9 @@ func (ngc *NacosGrpcClient) Subscribe(serviceName string) error {
 		return err
 	}
 
+	defer ngc.SubscribeMap.DLock.Unlock()
 	ngc.SubscribeMap.DLock.Lock()
 	ngc.SubscribeMap.Data[serviceName] = true
-	ngc.SubscribeMap.DLock.Unlock()
 
 	return nil
 }
@@ -146,9 +146,9 @@ func (ngc *NacosGrpcClient) Unsubsrcibe(serviceName string) error {
 		return err
 	}
 
+	defer ngc.SubscribeMap.DLock.Unlock()
 	ngc.SubscribeMap.DLock.Lock()
 	ngc.SubscribeMap.Data[serviceName] = false
-	ngc.SubscribeMap.DLock.Unlock()
 
 	return nil
 }

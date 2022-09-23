@@ -44,8 +44,6 @@ func init() {
 type NacosClient struct {
 	serviceMap ConcurrentMap
 	udpServer  UDPServer
-	//serverManager ServerManager
-	//serverPort    int
 }
 
 type NacosClientError struct {
@@ -162,7 +160,7 @@ func (nacosClient *NacosClient) getAllServiceNames() {
 			allDoms[service] = true
 		}
 		AllDoms.Data = allDoms
-		AllDoms.CacheSeconds = 10 //刷新间隔
+		AllDoms.CacheSeconds = 20 //刷新间隔
 	} else {
 		for _, service := range services {
 			if !AllDoms.Data[service] {
@@ -251,7 +249,7 @@ func NewNacosClient(namespaceId string, serverHosts []string) *NacosClient {
 	AllDoms = AllDomsMap{}
 	AllDoms.Data = make(map[string]bool)
 	AllDoms.DLock = sync.RWMutex{}
-	AllDoms.CacheSeconds = 10
+	AllDoms.CacheSeconds = 20
 
 	vc.getAllServiceNames()
 

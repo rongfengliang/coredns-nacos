@@ -10,7 +10,7 @@ import (
 var grpcClientTest = NewNacosGrpcClientTest()
 
 func NewNacosGrpcClientTest() *NacosGrpcClient {
-	grpcClient, err := NewNacosGrpcClient("", []string{"106.52.77.111:8848"}, nacosClientTest)
+	grpcClient, err := NewNacosGrpcClient("", []string{"console.nacos.io:8848"}, nacosClientTest)
 	if err != nil {
 		fmt.Println("init grpc client failed")
 	}
