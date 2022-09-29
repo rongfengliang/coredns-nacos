@@ -19,6 +19,7 @@ import (
 	"github.com/coredns/coredns/plugin"
 	"github.com/coredns/coredns/request"
 	"github.com/miekg/dns"
+	"github.com/nacos-group/nacos-sdk-go/v2/model"
 	"net"
 )
 
@@ -39,24 +40,37 @@ func (vs *Nacos) String() string {
 	return string(b)
 }
 
-func (vs *Nacos) managed(dom, clientIP string) bool {
-	if _, ok := DNSDomains[dom]; ok {
+func (vs *Nacos) managed(service, clientIP string) bool {
+	if _, ok := DNSDomains[service]; ok {
 		return false
 	}
 
 	defer AllDoms.DLock.RUnlock()
 
 	AllDoms.DLock.RLock()
-	_, ok1 := AllDoms.Data[dom]
+	_, ok1 := AllDoms.Data[service]
 
-	cacheKey := GetCacheKey(dom, clientIP)
+	_, inCache := vs.NacosClientImpl.GetDomainCache().Get(service)
 
-	_, inCache := vs.NacosClientImpl.GetDomainCache().Get(cacheKey)
+	/*
+		ok1 means service is alive in server
+		根据dns请求订阅服务：
+		1.服务首次请求, 缓存中没有数据
+		2.插件初始化时在缓存文件中缓存了该服务数据, 但未订阅
+	*/
+	if ok1 {
+		if !inCache {
+			vs.NacosClientImpl.getServiceNow(service, &vs.NacosClientImpl.serviceMap, clientIP)
+		}
+		if !GrpcClient.HasSubcribed(service) {
+			GrpcClient.Subscribe(service)
+		}
+	}
 
 	return ok1 || inCache
 }
 
-func (vs *Nacos) getRecordBySession(dom, clientIP string) Instance {
+func (vs *Nacos) getRecordBySession(dom, clientIP string) model.Instance {
 	host := *vs.NacosClientImpl.SrvInstance(dom, clientIP)
 	return host
 
@@ -77,7 +91,7 @@ func (vs *Nacos) ServeDNS(ctx context.Context, w dns.ResponseWriter, r *dns.Msg)
 	if !vs.managed(name[:len(name)-1], clientIP) {
 		return plugin.NextOrFailure(vs.Name(), vs.Next, ctx, w, r)
 	} else {
-		hosts := make([]Instance, 0)
+		hosts := make([]model.Instance, 0)
 		host := vs.NacosClientImpl.SrvInstance(name[:len(name)-1], clientIP)
 		hosts = append(hosts, *host)
 
@@ -90,11 +104,11 @@ func (vs *Nacos) ServeDNS(ctx context.Context, w dns.ResponseWriter, r *dns.Msg)
 			case 1:
 				rr = new(dns.A)
 				rr.(*dns.A).Hdr = dns.RR_Header{Name: state.QName(), Rrtype: dns.TypeA, Class: state.QClass(), Ttl: DNSTTL}
-				rr.(*dns.A).A = net.ParseIP(host.IP).To4()
+				rr.(*dns.A).A = net.ParseIP(host.Ip).To4()
 			case 2:
 				rr = new(dns.AAAA)
 				rr.(*dns.AAAA).Hdr = dns.RR_Header{Name: state.QName(), Rrtype: dns.TypeAAAA, Class: state.QClass(), Ttl: DNSTTL}
-				rr.(*dns.AAAA).AAAA = net.ParseIP(host.IP)
+				rr.(*dns.AAAA).AAAA = net.ParseIP(host.Ip)
 			}
 
 			srv := new(dns.SRV)
