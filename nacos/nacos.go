@@ -14,23 +14,20 @@
 package nacos
 
 import (
-	"github.com/miekg/dns"
-	"net"
-	"github.com/coredns/coredns/plugin/proxy"
-	"github.com/coredns/coredns/plugin"
-	"time"
-	"strconv"
-	"encoding/json"
-	"github.com/coredns/coredns/request"
 	"context"
+	"encoding/json"
+	"github.com/coredns/coredns/plugin"
+	"github.com/coredns/coredns/request"
+	"github.com/miekg/dns"
+	"github.com/nacos-group/nacos-sdk-go/v2/model"
+	"net"
 )
 
 type Nacos struct {
-	Next        plugin.Handler
-	Zones       []string
-	Proxy       proxy.Proxy
-	NacosClientImpl  *NacosClient
-	DNSCache    ConcurrentMap
+	Next            plugin.Handler
+	Zones           []string
+	NacosClientImpl *NacosClient
+	DNSCache        ConcurrentMap
 }
 
 func (vs *Nacos) String() string {
@@ -43,70 +40,37 @@ func (vs *Nacos) String() string {
 	return string(b)
 }
 
-// Lookup implements the ServiceBackend interface.
-func (e *Nacos) Lookup(state request.Request, name string, typ uint16) (*dns.Msg, error) {
-	key := name + strconv.Itoa(state.Family())
-	msg, ok := e.DNSCache.Get(key)
-
-	NacosClientLogger.Info("lookup " + name + " from upstream ")
-	if ok {
-		dnsCache := msg.(DnsCache)
-		if !dnsCache.Updated() {
-			msg1, err := e.Proxy.Lookup(state, name, typ)
-			if err == nil {
-				if len(msg1.Answer) > 0 {
-					dnsCache.Msg = msg1
-					dnsCache.LastUpdateMills = time.Now().UnixNano() / 1000000
-					e.DNSCache.Set(key, dnsCache)
-				}
-			} else {
-				NacosClientLogger.Warn("error while lookup dom: ", err)
-			}
-		}
-		bs, err := json.Marshal(dnsCache.Msg)
-
-		if err == nil {
-			NacosClientLogger.Info("Forward " + name + " -> " + string(bs))
-		}
-
-		return dnsCache.Msg, nil
-	} else {
-		msg1, err := e.Proxy.Lookup(state, name, typ)
-		if err == nil {
-			dnsCache := DnsCache{Msg: msg1, LastUpdateMills: time.Now().UnixNano() / 1000000}
-			e.DNSCache.Set(name, dnsCache)
-		} else {
-			NacosClientLogger.Warn("error while lookup dom: ", err)
-		}
-
-		bs, err := json.Marshal(msg1)
-
-		if err == nil {
-			NacosClientLogger.Info("Forward " + name + " -> " + string(bs))
-		}
-
-		return msg1, err
-	}
-}
-
-func (vs *Nacos) managed(dom, clientIP string) bool {
-	if _, ok := DNSDomains[dom]; ok {
+func (vs *Nacos) managed(service, clientIP string) bool {
+	if _, ok := DNSDomains[service]; ok {
 		return false
 	}
 
 	defer AllDoms.DLock.RUnlock()
 
 	AllDoms.DLock.RLock()
-	_, ok1 := AllDoms.Data[dom]
+	_, ok1 := AllDoms.Data[service]
 
-	cacheKey := GetCacheKey(dom, clientIP)
+	_, inCache := vs.NacosClientImpl.GetDomainCache().Get(service)
 
-	_, inCache := vs.NacosClientImpl.GetDomainCache().Get(cacheKey)
+	/*
+		ok1 means service is alive in server
+		根据dns请求订阅服务：
+		1.服务首次请求, 缓存中没有数据
+		2.插件初始化时在缓存文件中缓存了该服务数据, 但未订阅
+	*/
+	if ok1 {
+		if !inCache {
+			vs.NacosClientImpl.getServiceNow(service, &vs.NacosClientImpl.serviceMap, clientIP)
+		}
+		if !GrpcClient.HasSubcribed(service) {
+			GrpcClient.Subscribe(service)
+		}
+	}
 
 	return ok1 || inCache
 }
 
-func (vs *Nacos) getRecordBySession(dom, clientIP string) Instance {
+func (vs *Nacos) getRecordBySession(dom, clientIP string) model.Instance {
 	host := *vs.NacosClientImpl.SrvInstance(dom, clientIP)
 	return host
 
@@ -125,12 +89,9 @@ func (vs *Nacos) ServeDNS(ctx context.Context, w dns.ResponseWriter, r *dns.Msg)
 	}
 
 	if !vs.managed(name[:len(name)-1], clientIP) {
-		dnsMsg, _ := vs.Lookup(state, name, state.QType())
-		m.Answer = dnsMsg.Answer
-		m.Extra = dnsMsg.Extra
-
+		return plugin.NextOrFailure(vs.Name(), vs.Next, ctx, w, r)
 	} else {
-		hosts := make([]Instance, 0)
+		hosts := make([]model.Instance, 0)
 		host := vs.NacosClientImpl.SrvInstance(name[:len(name)-1], clientIP)
 		hosts = append(hosts, *host)
 
@@ -143,11 +104,11 @@ func (vs *Nacos) ServeDNS(ctx context.Context, w dns.ResponseWriter, r *dns.Msg)
 			case 1:
 				rr = new(dns.A)
 				rr.(*dns.A).Hdr = dns.RR_Header{Name: state.QName(), Rrtype: dns.TypeA, Class: state.QClass(), Ttl: DNSTTL}
-				rr.(*dns.A).A = net.ParseIP(host.IP).To4()
+				rr.(*dns.A).A = net.ParseIP(host.Ip).To4()
 			case 2:
 				rr = new(dns.AAAA)
 				rr.(*dns.AAAA).Hdr = dns.RR_Header{Name: state.QName(), Rrtype: dns.TypeAAAA, Class: state.QClass(), Ttl: DNSTTL}
-				rr.(*dns.AAAA).AAAA = net.ParseIP(host.IP)
+				rr.(*dns.AAAA).AAAA = net.ParseIP(host.Ip)
 			}
 
 			srv := new(dns.SRV)
@@ -163,7 +124,7 @@ func (vs *Nacos) ServeDNS(ctx context.Context, w dns.ResponseWriter, r *dns.Msg)
 		m.Answer = answer
 		m.Extra = extra
 		result, _ := json.Marshal(m.Answer)
-		NacosClientLogger.Info("[RESOLVE]",  " [" + name[:len(name)-1] + "]  result: " + string(result) + ", clientIP: " + clientIP)
+		NacosClientLogger.Info("[RESOLVE]", " ["+name[:len(name)-1]+"]  result: "+string(result)+", clientIP: "+clientIP)
 	}
 
 	m.SetReply(r)

@@ -14,11 +14,11 @@
 package nacos
 
 import (
-	"testing"
-	"github.com/mholt/caddy"
 	"strings"
-	"fmt"
+
+	"github.com/coredns/caddy"
 	os "os"
+	"testing"
 )
 
 func TestNacosParse(t *testing.T) {
@@ -29,12 +29,10 @@ func TestNacosParse(t *testing.T) {
 		expectedErrContent string // substring from the expected error. Empty for positive cases.
 	}{
 		{
-			`nacos nacos.local {
-			upstream 8.8.8.8:53
-			nacos_server 192.168.0.1
-        	nacos_server_port 8848
-        	cache_ttl 1
-			}
+			`nacos {
+					nacos_namespaceId public
+					nacos_server_host console.nacos.io:8848
+				  }
 `, "skydns", "localhost:300", "",
 		},
 	}
@@ -43,19 +41,20 @@ func TestNacosParse(t *testing.T) {
 
 	for _, test := range tests {
 		c := caddy.NewTestController("dns", test.input)
-		nacosimpl, err :=NacosParse(c)
+		_, err := NacosParse(c)
 		if err != nil {
-			t.Error("Failed to get instance.");
+			t.Error("Failed to get instance.")
 		} else {
+			if strings.Compare(GrpcClient.namespaceId, "") != 0 {
+				t.Fatal("Failed")
+			}
 			var passed bool
-			fmt.Println(nacosimpl.NacosClientImpl.GetServerManager().GetServerList())
-			for _, item := range nacosimpl.NacosClientImpl.GetServerManager().GetServerList() {
-				if strings.Compare(item, "192.168.0.1") == 0 {
+			for _, item := range GrpcClient.serverConfigs {
+				if strings.Compare(item.IpAddr, "console.nacos.io") == 0 && item.Port == 8848 {
 					t.Log("Passed")
 					passed = true
 				}
 			}
-
 			if !passed {
 				t.Fatal("Failed")
 			}

@@ -14,25 +14,24 @@
 package nacos
 
 import (
-	"os"
-	"net"
-	"strconv"
-	"math/rand"
 	json "encoding/json"
+	"math/rand"
+	"net"
+	"os"
+	"strconv"
 	"time"
 )
 
 type UDPServer struct {
-	port int
-	host string
+	port      int
+	host      string
 	vipClient *NacosClient
 }
 
 type PushData struct {
-	PushType string `json:"type"`
-	Data string `json:"data"`
-	LastRefTime int64 `json:"lastRefTime"`
-	
+	PushType    string `json:"type"`
+	Data        string `json:"data"`
+	LastRefTime int64  `json:"lastRefTime"`
 }
 
 func getUdpPort() int {
@@ -40,10 +39,10 @@ func getUdpPort() int {
 }
 
 func (us *UDPServer) tryListen() (*net.UDPConn, bool) {
-	addr, err := net.ResolveUDPAddr("udp", us.host+":"+ strconv.Itoa(us.port))
+	addr, err := net.ResolveUDPAddr("udp", us.host+":"+strconv.Itoa(us.port))
 	if err != nil {
 		NacosClientLogger.Error("Can't resolve address: ", err)
-		return nil , false
+		return nil, false
 	}
 
 	conn, err := net.ListenUDP("udp", addr)
@@ -59,7 +58,7 @@ func (us *UDPServer) SetNacosClient(nc *NacosClient) {
 	us.vipClient = nc
 }
 
-func (us *UDPServer) StartServer(){
+func (us *UDPServer) StartServer() {
 	var conn *net.UDPConn
 
 	for i := 0; i < 3; i++ {
@@ -98,7 +97,7 @@ func (us *UDPServer) handleClient(conn *net.UDPConn) {
 
 	s := TryDecompressData(data[:n])
 
-	NacosClientLogger.Info("receive push: " + s + " from: ", remoteAddr)
+	NacosClientLogger.Info("receive push: "+s+" from: ", remoteAddr)
 
 	var pushData PushData
 	err1 := json.Unmarshal([]byte(s), &pushData)
@@ -107,24 +106,23 @@ func (us *UDPServer) handleClient(conn *net.UDPConn) {
 		return
 	}
 
-	domain, err1 := ProcessDomainString(pushData.Data)
-	NacosClientLogger.Info("receive domain: " , domain)
+	service, err1 := ProcessDomainString(pushData.Data)
+	NacosClientLogger.Info("receive service: ", service)
 
 	if err1 != nil {
-		NacosClientLogger.Warn("failed to process push data: " + s, err1)
+		NacosClientLogger.Warn("failed to process push data: "+s, err1)
 	}
 
-	key := GetCacheKey(domain.Name, LocalIP())
+	key := GetCacheKey(service.Name, LocalIP())
 
-	us.vipClient.domainMap.Set(key, domain)
+	us.vipClient.serviceMap.Set(key, service)
 
 	ack := make(map[string]string)
 	ack["type"] = "push-ack"
 	ack["lastRefTime"] = strconv.FormatInt(pushData.LastRefTime, 10)
 	ack["data"] = ""
 
-	bs,_ := json.Marshal(ack)
+	bs, _ := json.Marshal(ack)
 
 	conn.WriteToUDP(bs, remoteAddr)
 }
-
