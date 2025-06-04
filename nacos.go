@@ -16,11 +16,12 @@ package nacos
 import (
 	"context"
 	"encoding/json"
+	"net"
+
 	"github.com/coredns/coredns/plugin"
 	"github.com/coredns/coredns/request"
 	"github.com/miekg/dns"
 	"github.com/nacos-group/nacos-sdk-go/v2/model"
-	"net"
 )
 
 type Nacos struct {
@@ -70,17 +71,10 @@ func (vs *Nacos) managed(service, clientIP string) bool {
 	return ok1 || inCache
 }
 
-func (vs *Nacos) getRecordBySession(dom, clientIP string) model.Instance {
-	host := *vs.NacosClientImpl.SrvInstance(dom, clientIP)
-	return host
-
-}
-
 func (vs *Nacos) ServeDNS(ctx context.Context, w dns.ResponseWriter, r *dns.Msg) (int, error) {
 	state := request.Request{W: w, Req: r}
 
 	name := state.QName()
-
 	m := new(dns.Msg)
 
 	clientIP := state.IP()

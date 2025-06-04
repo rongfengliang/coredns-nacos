@@ -16,7 +16,6 @@ package nacos
 import (
 	"encoding/json"
 	"fmt"
-	"github.com/nacos-group/nacos-sdk-go/v2/model"
 	"io/ioutil"
 	"math"
 	"math/rand"
@@ -27,6 +26,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/nacos-group/nacos-sdk-go/v2/model"
 
 	"github.com/cihub/seelog"
 )
@@ -229,7 +230,7 @@ func ProcessDomainString(s string) (model.Service, error) {
 	return service, nil
 }
 
-func NewNacosClient(namespaceId string, serverHosts []string) *NacosClient {
+func NewNacosClient(namespaceId string, serverHosts []string, userName, password string) *NacosClient {
 	fmt.Println("init nacos client.")
 	initLog()
 	vc := NacosClient{NewConcurrentMap(), UDPServer{}}
@@ -237,7 +238,7 @@ func NewNacosClient(namespaceId string, serverHosts []string) *NacosClient {
 	vc.udpServer.vipClient = &vc
 	//init grpcClient
 	var err error
-	GrpcClient, err = NewNacosGrpcClient(namespaceId, serverHosts, &vc)
+	GrpcClient, err = NewNacosGrpcClient(namespaceId, serverHosts, userName, password, &vc)
 	if err != nil {
 		NacosClientLogger.Error("init nacos-grpc-client failed.", err)
 	}

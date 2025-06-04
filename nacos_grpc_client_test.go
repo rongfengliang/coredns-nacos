@@ -2,15 +2,16 @@ package nacos
 
 import (
 	"fmt"
+	"testing"
+
 	"github.com/nacos-group/nacos-sdk-go/v2/model"
 	"github.com/stretchr/testify/assert"
-	"testing"
 )
 
 var grpcClientTest = NewNacosGrpcClientTest()
 
 func NewNacosGrpcClientTest() *NacosGrpcClient {
-	grpcClient, err := NewNacosGrpcClient("", []string{"console.nacos.io:8848"}, nacosClientTest)
+	grpcClient, err := NewNacosGrpcClient("", []string{"console.nacos.io:8848"}, "", "", nacosClientTest)
 	if err != nil {
 		fmt.Println("init grpc client failed")
 	}

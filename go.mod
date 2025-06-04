@@ -1,6 +1,6 @@
 module github.com/rongfengliang/coredns-nacos
 
-go 1.24.3
+go 1.23.0
 
 require (
 	github.com/cihub/seelog v0.0.0-20170130134532-f561c5e57575

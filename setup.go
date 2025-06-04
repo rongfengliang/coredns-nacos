@@ -15,11 +15,12 @@ package nacos
 
 import (
 	"fmt"
+	"strconv"
+	"strings"
+
 	"github.com/coredns/caddy"
 	"github.com/coredns/coredns/core/dnsserver"
 	"github.com/coredns/coredns/plugin"
-	"strconv"
-	"strings"
 )
 
 func init() {
@@ -31,11 +32,12 @@ func init() {
 }
 
 func setup(c *caddy.Controller) error {
-	fmt.Println("setup nacos plugin")
+	vs, err := NacosParse(c)
+	if err != nil {
+		return plugin.Error("nacos", err)
+	}
 	dnsserver.GetConfig(c).AddPlugin(func(next plugin.Handler) plugin.Handler {
-		vs, _ := NacosParse(c)
 		vs.Next = next
-		Inited = true
 		return vs
 	})
 	return nil
@@ -46,9 +48,11 @@ func NacosParse(c *caddy.Controller) (*Nacos, error) {
 	nacosImpl := Nacos{}
 	var serverHosts = make([]string, 0)
 	namespaceId := ""
+	userName := ""
+	password := ""
+
 	for c.Next() {
 		nacosImpl.Zones = c.RemainingArgs()
-
 		if c.NextBlock() {
 			for {
 				switch v := c.Val(); v {
@@ -56,7 +60,10 @@ func NacosParse(c *caddy.Controller) (*Nacos, error) {
 					namespaceId = c.RemainingArgs()[0]
 				case "nacos_server_host":
 					serverHosts = strings.Split(c.RemainingArgs()[0], ",")
-
+				case "nacos_username":
+					userName = c.RemainingArgs()[0]
+				case "nacos_password":
+					password = c.RemainingArgs()[0]
 				//case "nacos_server":
 				//	servers = strings.Split(c.RemainingArgs()[0], ",")
 				/* it is nacos_servera noop now */
@@ -87,12 +94,11 @@ func NacosParse(c *caddy.Controller) (*Nacos, error) {
 			}
 
 		}
-
-		client := NewNacosClient(namespaceId, serverHosts)
-		nacosImpl.NacosClientImpl = client
-		nacosImpl.DNSCache = NewConcurrentMap()
-
-		return &nacosImpl, nil
 	}
-	return &Nacos{}, nil
+
+	client := NewNacosClient(namespaceId, serverHosts, userName, password)
+	nacosImpl.NacosClientImpl = client
+	nacosImpl.DNSCache = NewConcurrentMap()
+	fmt.Println("nacos plugin init complete, namespaceId: " + namespaceId + ", serverHosts: " + strings.Join(serverHosts, ","))
+	return &nacosImpl, nil
 }

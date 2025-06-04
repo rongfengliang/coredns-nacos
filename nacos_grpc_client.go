@@ -2,14 +2,15 @@ package nacos
 
 import (
 	"fmt"
+	"strconv"
+	"strings"
+	"sync"
+
 	"github.com/nacos-group/nacos-sdk-go/v2/clients"
 	"github.com/nacos-group/nacos-sdk-go/v2/clients/naming_client"
 	"github.com/nacos-group/nacos-sdk-go/v2/common/constant"
 	"github.com/nacos-group/nacos-sdk-go/v2/model"
 	"github.com/nacos-group/nacos-sdk-go/v2/vo"
-	"strconv"
-	"strings"
-	"sync"
 )
 
 type NacosGrpcClient struct {
@@ -21,7 +22,7 @@ type NacosGrpcClient struct {
 	SubscribeMap  AllDomsMap
 }
 
-func NewNacosGrpcClient(namespaceId string, serverHosts []string, vc *NacosClient) (*NacosGrpcClient, error) {
+func NewNacosGrpcClient(namespaceId string, serverHosts []string, userName, password string, vc *NacosClient) (*NacosGrpcClient, error) {
 	var nacosGrpcClient NacosGrpcClient
 	nacosGrpcClient.nacosClient = vc
 	if namespaceId == "public" {
@@ -51,6 +52,8 @@ func NewNacosGrpcClient(namespaceId string, serverHosts []string, vc *NacosClien
 		constant.WithTimeoutMs(5000),
 		constant.WithNotLoadCacheAtStart(true),
 		constant.WithUpdateCacheWhenEmpty(true),
+		constant.WithUsername(userName),
+		constant.WithPassword(password),
 		constant.WithLogDir(LogPath),
 		constant.WithCacheDir(CachePath),
 		constant.WithLogLevel("debug"),
