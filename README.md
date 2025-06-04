@@ -5,10 +5,15 @@
 
 ## setup
 
-* plugin.cfg
+* plugin.cfg (order is important)
 
 ```code
+kubernetes:kubernetes
 nacos:github.com/rongfengliang/coredns-nacos
+file:file
+auto:auto
+secondary:secondary
+etcd:etcd
 ```
 
 * run build
