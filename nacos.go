@@ -21,7 +21,6 @@ import (
 	"github.com/coredns/coredns/plugin"
 	"github.com/coredns/coredns/request"
 	"github.com/miekg/dns"
-	"github.com/nacos-group/nacos-sdk-go/v2/model"
 )
 
 type Nacos struct {
@@ -85,10 +84,9 @@ func (vs *Nacos) ServeDNS(ctx context.Context, w dns.ResponseWriter, r *dns.Msg)
 	if !vs.managed(name[:len(name)-1], clientIP) {
 		return plugin.NextOrFailure(vs.Name(), vs.Next, ctx, w, r)
 	} else {
-		hosts := make([]model.Instance, 0)
-		host := vs.NacosClientImpl.SrvInstance(name[:len(name)-1], clientIP)
-		hosts = append(hosts, *host)
-
+		//hosts := make([]model.Instance, 0)
+		hosts := vs.NacosClientImpl.SrvInstances(name[:len(name)-1], clientIP)
+		//hosts = append(hosts, *host)
 		answer := make([]dns.RR, 0)
 		extra := make([]dns.RR, 0)
 		for _, host := range hosts {
@@ -106,7 +104,11 @@ func (vs *Nacos) ServeDNS(ctx context.Context, w dns.ResponseWriter, r *dns.Msg)
 			}
 
 			srv := new(dns.SRV)
-			srv.Hdr = dns.RR_Header{Name: "_" + state.Proto() + "." + state.QName(), Rrtype: dns.TypeSRV, Class: state.QClass(), Ttl: DNSTTL}
+			if host.Metadata == nil || host.Metadata["protocol"] == "" {
+				srv.Hdr = dns.RR_Header{Name: "_" + "tcp" + "." + state.QName(), Rrtype: dns.TypeSRV, Class: state.QClass(), Ttl: DNSTTL}
+			} else {
+				srv.Hdr = dns.RR_Header{Name: "_" + host.Metadata["protocol"] + "." + state.QName(), Rrtype: dns.TypeSRV, Class: state.QClass(), Ttl: DNSTTL}
+			}
 			port := host.Port
 			srv.Port = uint16(port)
 			srv.Target = "."

@@ -17,7 +17,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
-	"math"
 	"math/rand"
 	"os"
 	"path/filepath"
@@ -378,9 +377,11 @@ func (vc *NacosClient) SrvInstances(domainName, clientIP string) []model.Instanc
 	//select healthy instances
 	for _, host := range dom.Hosts {
 		if host.Healthy && host.Enable && host.Weight > 0 {
-			for i := 0; i < int(math.Ceil(host.Weight)); i++ {
-				hosts = append(hosts, host)
-			}
+			// don't use weight for now
+			// for i := 0; i < int(math.Ceil(host.Weight)); i++ {
+			// 	hosts = append(hosts, host)
+			// }
+			hosts = append(hosts, host)
 		}
 	}
 
