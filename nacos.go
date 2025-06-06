@@ -111,8 +111,8 @@ func (vs *Nacos) ServeDNS(ctx context.Context, w dns.ResponseWriter, r *dns.Msg)
 			}
 			port := host.Port
 			srv.Port = uint16(port)
+			srv.Target = state.QName()
 			srv.Weight = uint16(host.Weight)
-			srv.Target = "."
 			extra = append(extra, srv)
 			answer = append(answer, rr)
 		}
