@@ -160,9 +160,10 @@ func (nacosClient *NacosClient) getAllServiceNames() {
 			allDoms[service] = true
 		}
 		AllDoms.Data = allDoms
-		AllDoms.CacheSeconds = 20 //刷新间隔
+		AllDoms.CacheSeconds = 10 //刷新间隔
 	} else {
 		for _, service := range services {
+			fmt.Println("get service: " + service)
 			if !AllDoms.Data[service] {
 				AllDoms.Data[service] = true
 			}
@@ -249,13 +250,12 @@ func NewNacosClient(namespaceId string, serverHosts []string, userName, password
 	AllDoms = AllDomsMap{}
 	AllDoms.Data = make(map[string]bool)
 	AllDoms.DLock = sync.RWMutex{}
-	AllDoms.CacheSeconds = 20
+	AllDoms.CacheSeconds = 10
 
 	vc.getAllServiceNames()
 
-	go vc.asyncGetAllServiceNames()
-
-	//go vc.asyncUpdateDomain()
+	//go vc.asyncGetAllServiceNames()
+	go vc.asyncUpdateDomain()
 
 	NacosClientLogger.Info("cache-path: " + CachePath)
 	return &vc
@@ -287,21 +287,17 @@ func (vc *NacosClient) GetDomain(name string) (*Domain, error) {
 
 func (vc *NacosClient) asyncUpdateDomain() {
 	for {
-		for k, v := range vc.serviceMap.Items() {
-			service := v.(model.Service)
+		for k, _ := range vc.serviceMap.Items() {
 			ss := strings.Split(k, SEPERATOR)
-
 			serviceName := ss[0]
 			var clientIP string
 			if len(ss) > 1 && ss[1] != "" {
 				clientIP = ss[1]
+				serviceName = ss[1]
 			}
-
-			if uint64(CurrentMillis())-service.LastRefTime > service.CacheMillis && vc.Registered(serviceName) {
-				vc.getServiceNow(serviceName, &vc.serviceMap, clientIP)
-			}
+			vc.getServiceNow(serviceName, &vc.serviceMap, clientIP)
 		}
-		time.Sleep(1 * time.Second)
+		time.Sleep(3 * time.Second)
 	}
 
 }
@@ -310,6 +306,9 @@ func GetCacheKey(dom, clientIP string) string {
 	return dom + SEPERATOR + clientIP
 }
 
+func GetCacheKeyV2(dom string) string {
+	return dom
+}
 func (vc *NacosClient) getServiceNow(serviceName string, cache *ConcurrentMap, clientIP string) model.Service {
 	service := GrpcClient.GetService(serviceName)
 
@@ -362,10 +361,9 @@ func (vc *NacosClient) SrvInstance(serviceName, clientIP string) *model.Instance
 }
 
 func (vc *NacosClient) SrvInstances(domainName, clientIP string) []model.Instance {
-	cacheKey := GetCacheKey(domainName, clientIP)
+	cacheKey := GetCacheKeyV2(domainName)
 	item, hasDom := vc.serviceMap.Get(cacheKey)
 	var dom model.Service
-
 	if !hasDom {
 		dom = vc.getServiceNow(domainName, &vc.serviceMap, clientIP)
 		vc.serviceMap.Set(cacheKey, dom)
